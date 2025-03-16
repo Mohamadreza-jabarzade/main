@@ -4,61 +4,112 @@ require_once "functions/helpers.php";
 require_once "functions/db.php";
 require_once "functions/error_handle.php";
 session_start();
+$err_signin = new handle();
+$err_signup = new handle();
 
 //signup handle
-$err = new handle();
 
-if(isset($_POST["email"]) &&
-    isset($_POST["password"]) &&
-    isset($_POST["confirm"]) &&
-    isset($_POST["username"])){
-    if(empty($_POST["email"])){
-        $err->set_empty_err("email","Email is required");
-    }
-    if(empty($_POST["password"])){
-        $err->set_empty_err("password","Password is required");
-    }
-    if(empty($_POST["confirm"])){
-        $err->set_empty_err("confirm","Confirm password is required");
-    }
-    if(empty($_POST["username"])){
-        $err->set_empty_err("username","username is required");
-    }
-    if (!filter_var($_POST["email"], FILTER_VALIDATE_EMAIL)){
-        $err->set_validity_err("email","Invalid email format");
-    }
-    if ($err->count_errors() == 0){
 
-        if ($_POST["password"] == $_POST["confirm"]) {
-            if (strlen($_POST["password"]) < 8 ) {
-                $err->set_validity_err("password","Password must be at least 8 characters long");
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+
+    if (isset($_POST["signin"])){
+
+        if (isset($_POST['username']) && isset($_POST['password'])) {
+            if (!empty($_POST['username']) && !empty($_POST['password'])) {
+                    if (strlen($_POST["password"]) < 8 ) {
+                        $err_signin->set_validity_err("password","Password must be at least 8 characters long");
+                    }else{
+                        $query = "select * from users where username = ?";
+                        $stmt = $pdo->prepare($query);
+                        $stmt->execute([$_POST['username']]);
+                        $row = $stmt->fetch();
+
+                        if ($row) {
+                            if (password_verify($_POST['password'], $row->password)) {
+                                if ($row->admin === 1){
+                                    $_SESSION['admin'] = $row->email;
+                                    redirect('panel');
+                                }
+                                else {
+                                    $_SESSION['user'] = $row->username;
+                                    redirect('index.php');
+                                }
+                            }
+                        }
+                        else {
+                            $err_signin -> set_validity_err("username","username or password is incorrect");
+                        }
+                    }
+
             }
             else{
-                $query = 'select * from users where email = ? or username = ?';
-                $stmt = $pdo->prepare($query);
-                $stmt->execute([$_POST["email"],$_POST["username"]]);
-                $user = $stmt->fetch();
-                if ($user) {
-                    $err -> set_validity_err("email","This email is already taken");
-                    $err -> set_validity_err("username","This username is already taken");
+                $err_signin -> set_validity_err("password","please fill all fields");
+            }
+        }
+
+    }
+    }
+
+
+
+    if (isset($_POST["signup"])) {
+
+
+
+        if(isset($_POST["email"]) &&
+            isset($_POST["password"]) &&
+            isset($_POST["confirm"]) &&
+            isset($_POST["username"])){
+            if(empty($_POST["email"])){
+                $err_signup->set_empty_err("email","Email is required");
+            }
+            if(empty($_POST["password"])){
+                $err_signup->set_empty_err("password","Password is required");
+            }
+            if(empty($_POST["confirm"])){
+                $err_signup->set_empty_err("confirm","Confirm password is required");
+            }
+            if(empty($_POST["username"])){
+                $err_signup->set_empty_err("username","username is required");
+            }
+            if (!filter_var($_POST["email"], FILTER_VALIDATE_EMAIL)){
+                $err_signup->set_validity_err("email","Invalid email format");
+            }
+            if ($err_signup->count_errors() == 0){
+
+                if ($_POST["password"] == $_POST["confirm"]) {
+                    if (strlen($_POST["password"]) < 8 ) {
+                        $err_signup->set_validity_err("password","Password must be at least 8 characters long");
+                    }
+                    else{
+                        $query = 'select * from users where email = ? or username = ?';
+                        $stmt = $pdo->prepare($query);
+                        $stmt->execute([$_POST["email"],$_POST["username"]]);
+                        $user = $stmt->fetch();
+                        if ($user) {
+                            $err_signup -> set_validity_err("email","This email is already taken");
+                            $err_signup -> set_validity_err("username","This username is already taken");
+                        }
+                        else{
+                            $query = 'insert into users (email,password,username, created_at) values (?,?,?,now())';
+                            $stmt = $pdo->prepare($query);
+                            $hash = password_hash($_POST["password"], PASSWORD_DEFAULT);
+                            $stmt->execute([$_POST["email"],$hash ,$_POST["username"]]);
+                            redirect('index.php?show=signin');
+                        }
+                    }
                 }
                 else{
-                    $query = 'insert into users (email,password,username, created_at) values (?,?,?,now())';
-                    $stmt = $pdo->prepare($query);
-                    $hash = password_hash($_POST["password"], PASSWORD_DEFAULT);
-                    $stmt->execute([$_POST["email"],$hash ,$_POST["username"]]);
-                    redirect('index.php?show=signin');
+                    $err_signup->set_validity_err("confirm_password","confirm not matched with password.");
                 }
             }
         }
-        else{
-            $err->set_validity_err("confirm_password","confirm not matched with password.");
-        }
-    }
+
 }
 
-
 //signup handle
+
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -100,8 +151,12 @@ if(isset($_POST["email"]) &&
 
     </div>
     <div class="flex items-center gap-5">
-        <a class="hidden md:block bg-red-600/80 rounded-md text-white px-3 py-2 hover:bg-red-700 duration-300 transition-color"
-           href="">پست جدید</a>
+       <?php
+            if (isset($_SESSION['user'])) {?>
+                <a class="hidden md:block bg-red-600/80 rounded-md text-white px-3 py-2 hover:bg-red-700 duration-300 transition-color"
+                   href=""><?=$_SESSION['user']?></a>
+            <?php }
+            ?>
         <button onclick="open_sign()"><i class="fa fa-user"></i></button>
     </div>
 
@@ -326,9 +381,19 @@ if(isset($_POST["email"]) &&
             <h1 class="text-2xl font-bold text-center inline">ورود</h1>
             <div class=""></div>
         </div>
-
+        <input type="hidden" name="signin" value="true" >
         <input type="text" name="username" placeholder="نام کاربری خود را وارد کنید">
+        <section class="bg-light my-0 px-2"><small class="text-danger"><?php
+                if ($err_signin->has("password")) {
+                echo $err_signin->get("password");
+                }
+                ?></small></section>
         <input type="password" name="password" placeholder="رمز عبور خود را وارد کنید">
+        <section class="bg-light my-0 px-2"><small class="text-danger"><?php
+                if ($err_signin->has("password")) {
+                echo $err_signin->get("password");
+                }
+                ?></small></section>
         <input class="bg-green-500 w-1/3 font-semibold text-md text-white text-center" type="submit" value="ورود">
         <p>حساب ندارید <span class="text-red-400" onclick="signup()">ساخت حساب</span></p>
     </form>
@@ -339,46 +404,35 @@ if(isset($_POST["email"]) &&
             <h1 class="text-2xl font-bold text-center inline">ثبت نام</h1>
             <div class=""></div>
         </div>
-
+        <input type="hidden" name="signup" value="true">
         <input type="text" name="username" placeholder="نام کاربری خود را وارد کنید">
         <section class="bg-light my-0 px-2"><small class="text-danger"><?php
-                if ($err->has("username")) {
-                    echo $err->get("username");
+                if ($err_signup->has("username")) {
+                    echo $err_signup->get("username");
                 }
                 ?></small></section>
         <input type="password" name="password" placeholder="رمز عبور خود را وارد کنید">
         <section class="bg-light my-0 px-2"><small class="text-danger"><?php
-                if ($err->has("password")) {
-                    echo $err->get("password");
+                if ($err_signup->has("password")) {
+                    echo $err_signup->get("password");
                 }
                 ?></small></section>
         <input type="password" name="confirm" placeholder="رمز عبور خود را دوباره وارد کنید">
         <section class="bg-light my-0 px-2"><small class="text-danger"><?php
-                if ($err->has("confirm")) {
-                    echo $err->get("confirm");
+                if ($err_signup->has("confirm")) {
+                    echo $err_signup->get("confirm");
                 }
                 ?></small></section>
         <input type="email" name="email" placeholder="ایمیل خود را وارد کنید">
         <section class="bg-light my-0 px-2"><small class="text-danger"><?php
-                if ($err->has("email")) {
-                    echo $err->get("email");
+                if ($err_signup->has("email")) {
+                    echo $err_signup->get("email");
                 }
                 ?></small></section>
         <input class="bg-green-500 w-1/3 font-semibold text-md text-white text-center" type="submit" value="ورود">
         <p>حساب دارید <span class="text-red-400" onclick="signin()">وارد شوید</span></p>
     </form>
 </div>
-
-
-
-
-
-
-
-
-
-
-
 <script src="<?=asset('assets/js/app.js')?>"></script>
 </body>
 

@@ -14,6 +14,7 @@ function close_nav() {
 }
 
 function open_sign() {
+
     document.getElementById("sign").classList.remove("invisible");
     signin();
 }
